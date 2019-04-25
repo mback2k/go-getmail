@@ -50,4 +50,10 @@ func main() {
 			log.Println(c.Name, ":", c.err)
 		}
 	}
+	for _, c := range config.Accounts {
+		err := c.close()
+		if err != nil {
+			log.Println(c.Name, ":", err)
+		}
+	}
 }

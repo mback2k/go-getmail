@@ -131,6 +131,31 @@ func (c *fetchConfig) start() error {
 	return err
 }
 
+func (c *fetchConfig) close() error {
+	if c.Source.idleconn != nil {
+		err := c.Source.idleconn.Logout()
+		if err != nil {
+			return err
+		}
+		c.Source.idleconn = nil
+	}
+	if c.Source.imapconn != nil {
+		err := c.Source.imapconn.Logout()
+		if err != nil {
+			return err
+		}
+		c.Source.imapconn = nil
+	}
+	if c.Target.imapconn != nil {
+		err := c.Target.imapconn.Logout()
+		if err != nil {
+			return err
+		}
+		c.Target.imapconn = nil
+	}
+	return nil
+}
+
 func (c *fetchConfig) watch(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
