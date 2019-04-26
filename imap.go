@@ -60,6 +60,7 @@ type fetchConfig struct {
 }
 
 func (c *FetchServer) open() (*client.Client, error) {
+	log.Println("Connecting to", c.Server)
 	con, err := client.DialTLS(c.Server, nil)
 	if err != nil {
 		return nil, err
@@ -122,7 +123,7 @@ func (c *fetchConfig) start() error {
 	if err != nil {
 		return err
 	}
-	err = c.Source.openIDLE()
+	err = c.Source.closeIMAP()
 	if err != nil {
 		return err
 	}
@@ -130,31 +131,54 @@ func (c *fetchConfig) start() error {
 	if err != nil {
 		return err
 	}
+	err = c.Target.closeIMAP()
+	if err != nil {
+		return err
+	}
+	err = c.Source.openIDLE()
+	if err != nil {
+		return err
+	}
 	err = c.Source.startIDLE()
 	return err
 }
 
+func (c *FetchServer) closeIMAP() error {
+	if c.imapconn == nil {
+		return nil
+	}
+	err := c.imapconn.Logout()
+	if err != nil {
+		return err
+	}
+	c.imapconn = nil
+	return nil
+}
+
+func (c *fetchSource) closeIDLE() error {
+	if c.idleconn == nil {
+		return nil
+	}
+	err := c.idleconn.Logout()
+	if err != nil {
+		return err
+	}
+	c.idleconn = nil
+	return nil
+}
+
 func (c *fetchConfig) close() error {
-	if c.Source.idleconn != nil {
-		err := c.Source.idleconn.Logout()
-		if err != nil {
-			return err
-		}
-		c.Source.idleconn = nil
+	err := c.Source.closeIDLE()
+	if err != nil {
+		return err
 	}
-	if c.Source.imapconn != nil {
-		err := c.Source.imapconn.Logout()
-		if err != nil {
-			return err
-		}
-		c.Source.imapconn = nil
+	err = c.Source.closeIMAP()
+	if err != nil {
+		return err
 	}
-	if c.Target.imapconn != nil {
-		err := c.Target.imapconn.Logout()
-		if err != nil {
-			return err
-		}
-		c.Target.imapconn = nil
+	err = c.Target.closeIMAP()
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -185,6 +209,18 @@ func (c *fetchConfig) watch(ctx context.Context) error {
 }
 
 func (c *fetchConfig) handle() error {
+	err := c.Source.openIMAP()
+	if err != nil {
+		return err
+	}
+	defer c.Source.closeIMAP()
+
+	err = c.Target.openIMAP()
+	if err != nil {
+		return err
+	}
+	defer c.Target.closeIMAP()
+
 	errors := make(chan error, 1)
 	messages := make(chan *imap.Message, 1)
 	deletes := make(chan uint32, 1)
