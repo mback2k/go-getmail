@@ -35,7 +35,7 @@ type FetchServer struct {
 	Password string
 	Mailbox  string
 
-	name     *string
+	config   *fetchConfig
 	imapconn *client.Client
 }
 
@@ -51,16 +51,27 @@ type fetchTarget struct {
 	FetchServer `mapstructure:"IMAP"`
 }
 
+type fetchState int
+
+const (
+	initialState    = (fetchState)(0 << 0)
+	connectingState = (fetchState)(1 << 0)
+	connectedState  = (fetchState)(1 << 1)
+	watchingState   = (fetchState)(1 << 2)
+	fetchingState   = (fetchState)(1 << 3)
+	shutdownState   = (fetchState)(1 << 4)
+)
+
 type fetchConfig struct {
 	Name   string
 	Source fetchSource
 	Target fetchTarget
 
-	err error
+	state fetchState
+	err   error
 }
 
 func (c *FetchServer) open() (*client.Client, error) {
-	log.Println("Connecting to", c.Server)
 	con, err := client.DialTLS(c.Server, nil)
 	if err != nil {
 		return nil, err
@@ -117,8 +128,9 @@ func (c *fetchSource) startIDLE() error {
 }
 
 func (c *fetchConfig) start() error {
-	c.Source.name = &c.Name
-	c.Target.name = &c.Name
+	c.Source.config = c
+	c.Target.config = c
+	c.state = connectingState
 	err := c.Source.openIMAP()
 	if err != nil {
 		return err
@@ -140,6 +152,10 @@ func (c *fetchConfig) start() error {
 		return err
 	}
 	err = c.Source.startIDLE()
+	if err != nil {
+		return err
+	}
+	c.state = connectedState
 	return err
 }
 
@@ -168,6 +184,7 @@ func (c *fetchSource) closeIDLE() error {
 }
 
 func (c *fetchConfig) close() error {
+	c.state = shutdownState
 	err := c.Source.closeIDLE()
 	if err != nil {
 		return err
@@ -180,10 +197,14 @@ func (c *fetchConfig) close() error {
 	if err != nil {
 		return err
 	}
+	c.state = initialState
 	return nil
 }
 
 func (c *fetchConfig) watch(ctx context.Context) error {
+	c.state = watchingState
+	log.Println(c.Name, "[", c.state, "]:", "Begin idling")
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errors := make(chan error, 1)
@@ -193,22 +214,26 @@ func (c *fetchConfig) watch(ctx context.Context) error {
 	for {
 		select {
 		case update := <-c.Source.updates:
-			log.Println(c.Name, ":", "New update:", reflect.TypeOf(update), update)
+			log.Println(c.Name, "[", c.state, "]:", "New update:", reflect.TypeOf(update))
 			_, ok := update.(*client.MailboxUpdate)
 			if ok {
+				c.state = fetchingState
 				err := c.handle()
 				if err != nil {
 					return err
 				}
+				c.state = watchingState
 			}
 		case err := <-errors:
-			log.Println(c.Name, ":", "Not idling anymore", err)
+			log.Println(c.Name, "[", c.state, "]:", "Not idling anymore", err)
 			return err
 		}
 	}
 }
 
 func (c *fetchConfig) handle() error {
+	log.Println(c.Name, "[", c.state, "]:", "Begin handling")
+
 	err := c.Source.openIMAP()
 	if err != nil {
 		return err
@@ -232,11 +257,11 @@ func (c *fetchConfig) handle() error {
 	for {
 		err, more := <-errors
 		if err != nil {
-			log.Println(c.Name, ":", "Message handling failed", err)
+			log.Println(c.Name, "[", c.state, "]:", "Message handling failed", err)
 			return err
 		}
 		if !more {
-			log.Println(c.Name, ":", "Message handling successful", err)
+			log.Println(c.Name, "[", c.state, "]:", "Message handling successful")
 			return nil
 		}
 	}
@@ -275,7 +300,7 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 	}
 
 	for msg := range messages {
-		log.Println(*c.name, ":", "Handling message", msg.Uid)
+		log.Println(c.config.Name, "[", c.config.state, "]:", "Handling message", msg.Uid)
 
 		deleted := false
 		flags := []string{}
@@ -291,10 +316,11 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 			}
 		}
 		if deleted {
+			log.Println(c.config.Name, "[", c.config.state, "]:", "Ignoring message", msg.Uid)
 			continue
 		}
 
-		log.Println(*c.name, ":", "Storing message", msg.Uid)
+		log.Println(c.config.Name, "[", c.config.state, "]:", "Storing message", msg.Uid)
 
 		body := msg.GetBody(section)
 		err := c.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
@@ -312,7 +338,7 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) {
 	seqset := new(imap.SeqSet)
 	for uid := range deletes {
-		log.Println(*c.name, ":", "Deleting message", uid)
+		log.Println(c.config.Name, "[", c.config.state, "]:", "Deleting message", uid)
 
 		seqset.AddNum(uid)
 	}

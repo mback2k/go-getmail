@@ -38,7 +38,7 @@ func main() {
 	done := make(chan *fetchConfig, 1)
 	for _, c := range config.Accounts {
 		go func(c *fetchConfig) {
-			log.Println(c.Name, ":", c.Source.Server, "-->", c.Target.Server)
+			log.Println(c.Name, "[", c.state, "]:", c.Source.Server, "-->", c.Target.Server)
 			c.run(ctx)
 			done <- c
 		}(c)
@@ -47,13 +47,13 @@ func main() {
 		c := <-done
 		if c.err != nil {
 			cancel()
-			log.Println(c.Name, ":", c.err)
+			log.Println(c.Name, "[", c.state, "]:", c.err)
 		}
 	}
 	for _, c := range config.Accounts {
 		err := c.close()
 		if err != nil {
-			log.Println(c.Name, ":", err)
+			log.Println(c.Name, "[", c.state, "]:", err)
 		}
 	}
 }
