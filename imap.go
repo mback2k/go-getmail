@@ -35,6 +35,7 @@ type FetchServer struct {
 	Password string
 	Mailbox  string
 
+	name     *string
 	imapconn *client.Client
 }
 
@@ -115,6 +116,8 @@ func (c *fetchSource) startIDLE() error {
 }
 
 func (c *fetchConfig) start() error {
+	c.Source.name = &c.Name
+	c.Target.name = &c.Name
 	err := c.Source.openIMAP()
 	if err != nil {
 		return err
@@ -236,7 +239,7 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 	}
 
 	for msg := range messages {
-		log.Println(c.Username, ":", "Handling message", msg.Uid)
+		log.Println(*c.name, ":", "Handling message", msg.Uid)
 
 		deleted := false
 		flags := []string{}
@@ -255,7 +258,7 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 			continue
 		}
 
-		log.Println(c.Username, ":", "Storing message", msg.Uid)
+		log.Println(*c.name, ":", "Storing message", msg.Uid)
 
 		body := msg.GetBody(section)
 		err := c.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
@@ -273,7 +276,7 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) {
 	seqset := new(imap.SeqSet)
 	for uid := range deletes {
-		log.Println(c.Username, ":", "Deleting message", uid)
+		log.Println(*c.name, ":", "Deleting message", uid)
 
 		seqset.AddNum(uid)
 	}
