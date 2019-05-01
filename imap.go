@@ -113,7 +113,7 @@ func (c *fetchSource) selectIDLE() (*client.MailboxUpdate, error) {
 	return update, err
 }
 
-func (c *fetchSource) startIDLE() error {
+func (c *fetchSource) initIDLE() error {
 	update, err := c.selectIDLE()
 	if err != nil {
 		return err
@@ -127,7 +127,7 @@ func (c *fetchSource) startIDLE() error {
 	return nil
 }
 
-func (c *fetchConfig) start() error {
+func (c *fetchConfig) init() error {
 	c.Source.config = c
 	c.Target.config = c
 	c.state = connectingState
@@ -151,7 +151,7 @@ func (c *fetchConfig) start() error {
 	if err != nil {
 		return err
 	}
-	err = c.Source.startIDLE()
+	err = c.Source.initIDLE()
 	if err != nil {
 		return err
 	}
@@ -357,9 +357,18 @@ func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) 
 	close(errors)
 }
 
-func (c *fetchConfig) run(ctx context.Context) {
-	c.err = c.start()
+func (c *fetchConfig) run(ctx context.Context, done chan<- *fetchConfig) {
+	defer c.done(done)
+	c.err = c.init()
 	if c.err == nil {
 		c.err = c.watch(ctx)
 	}
+}
+
+func (c *fetchConfig) done(done chan<- *fetchConfig) {
+	err := c.close()
+	if c.err == nil {
+		c.err = err
+	}
+	done <- c
 }
