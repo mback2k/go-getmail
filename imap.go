@@ -58,7 +58,7 @@ const (
 	connectingState = (fetchState)(1 << 0)
 	connectedState  = (fetchState)(1 << 1)
 	watchingState   = (fetchState)(1 << 2)
-	fetchingState   = (fetchState)(1 << 3)
+	handlingState   = (fetchState)(1 << 3)
 	shutdownState   = (fetchState)(1 << 4)
 )
 
@@ -235,7 +235,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	defer func(c *fetchConfig, s fetchState) {
 		c.state = s
 	}(c, c.state)
-	c.state = fetchingState
+	c.state = handlingState
 
 	log.Println(c.Name, "[", c.state, "]:", "Begin handling")
 
