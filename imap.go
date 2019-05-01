@@ -254,8 +254,8 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	defer c.Target.closeIMAP()
 
 	errors := make(chan error, 1)
-	messages := make(chan *imap.Message, 1)
-	deletes := make(chan uint32, 1)
+	messages := make(chan *imap.Message, 100)
+	deletes := make(chan uint32, 100)
 
 	go c.Source.fetchMessages(messages, errors)
 	go c.Target.storeMessages(messages, deletes, errors)
