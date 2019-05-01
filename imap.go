@@ -202,11 +202,16 @@ func (c *fetchConfig) close() error {
 }
 
 func (c *fetchConfig) watch(ctx context.Context) error {
+	defer func(c *fetchConfig, s fetchState) {
+		c.state = s
+	}(c, c.state)
 	c.state = watchingState
+
 	log.Println(c.Name, "[", c.state, "]:", "Begin idling")
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	errors := make(chan error, 1)
 	go func() {
 		errors <- c.Source.idle.IdleWithFallback(ctx.Done(), 0)
@@ -217,12 +222,7 @@ func (c *fetchConfig) watch(ctx context.Context) error {
 			log.Println(c.Name, "[", c.state, "]:", "New update:", reflect.TypeOf(update))
 			_, ok := update.(*client.MailboxUpdate)
 			if ok {
-				c.state = fetchingState
-				err := c.handle()
-				if err != nil {
-					return err
-				}
-				c.state = watchingState
+				c.handle(cancel)
 			}
 		case err := <-errors:
 			log.Println(c.Name, "[", c.state, "]:", "Not idling anymore", err)
@@ -231,18 +231,25 @@ func (c *fetchConfig) watch(ctx context.Context) error {
 	}
 }
 
-func (c *fetchConfig) handle() error {
+func (c *fetchConfig) handle(cancel context.CancelFunc) {
+	defer func(c *fetchConfig, s fetchState) {
+		c.state = s
+	}(c, c.state)
+	c.state = fetchingState
+
 	log.Println(c.Name, "[", c.state, "]:", "Begin handling")
 
 	err := c.Source.openIMAP()
 	if err != nil {
-		return err
+		log.Println(c.Name, "[", c.state, "]:", "Source connection failed", err)
+		cancel()
 	}
 	defer c.Source.closeIMAP()
 
 	err = c.Target.openIMAP()
 	if err != nil {
-		return err
+		log.Println(c.Name, "[", c.state, "]:", "Target connection failed", err)
+		cancel()
 	}
 	defer c.Target.closeIMAP()
 
@@ -258,11 +265,11 @@ func (c *fetchConfig) handle() error {
 		err, more := <-errors
 		if err != nil {
 			log.Println(c.Name, "[", c.state, "]:", "Message handling failed", err)
-			return err
+			cancel()
 		}
 		if !more {
-			log.Println(c.Name, "[", c.state, "]:", "Message handling successful")
-			return nil
+			log.Println(c.Name, "[", c.state, "]:", "Message handling finished")
+			break
 		}
 	}
 }
@@ -271,11 +278,12 @@ func (c *fetchSource) fetchMessages(messages chan *imap.Message, errors chan<- e
 	update, err := c.selectIMAP()
 	if err != nil {
 		errors <- err
+		close(messages)
 		return
 	}
 
 	if update.Mailbox.Messages < 1 {
-		close(errors)
+		close(messages)
 		return
 	}
 
@@ -287,6 +295,8 @@ func (c *fetchSource) fetchMessages(messages chan *imap.Message, errors chan<- e
 }
 
 func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<- uint32, errors chan<- error) {
+	defer close(deletes)
+
 	section, err := imap.ParseBodySectionName("BODY[]")
 	if err != nil {
 		errors <- err
@@ -331,11 +341,11 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 
 		deletes <- msg.Uid
 	}
-
-	close(deletes)
 }
 
 func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) {
+	defer close(errors)
+
 	seqset := new(imap.SeqSet)
 	for uid := range deletes {
 		log.Println(c.config.Name, "[", c.config.state, "]:", "Deleting message", uid)
@@ -344,17 +354,13 @@ func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) 
 	}
 
 	if seqset.Empty() {
-		close(errors)
 		return
 	}
 
 	err := c.imapconn.UidStore(seqset, imap.AddFlags, []interface{}{imap.DeletedFlag}, nil)
 	if err != nil {
 		errors <- err
-		return
 	}
-
-	close(errors)
 }
 
 func (c *fetchConfig) run(ctx context.Context, done chan<- *fetchConfig) {
