@@ -22,12 +22,29 @@ import (
 	"context"
 	"log"
 	"runtime"
+
+	"github.com/rollbar/rollbar-go"
 )
+
+func reportError() {
+	if r := recover(); r != nil {
+		rollbar.Critical(r)
+		rollbar.Wait()
+		log.Fatal(r)
+	}
+}
 
 func main() {
 	config, err := loadConfig()
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if config.Rollbar != nil {
+		rollbar.SetToken(config.Rollbar.AccessToken)
+		rollbar.SetEnvironment(config.Rollbar.Environment)
+		defer reportError()
+		log.Println("Errors will be reported to rollbar.com!")
 	}
 
 	runtime.GC()

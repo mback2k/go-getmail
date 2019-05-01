@@ -20,8 +20,15 @@ package main
 
 import "github.com/spf13/viper"
 
+type configRollbar struct {
+	AccessToken string
+	Environment string
+}
+
 type config struct {
 	Accounts []*fetchConfig
+
+	Rollbar *configRollbar
 }
 
 func loadConfig() (*config, error) {
