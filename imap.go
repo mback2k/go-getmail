@@ -108,7 +108,7 @@ func (c *FetchServer) selectIMAP() (*client.MailboxUpdate, error) {
 }
 
 func (c *fetchSource) selectIDLE() (*client.MailboxUpdate, error) {
-	status, err := c.idleconn.Select(c.Mailbox, false)
+	status, err := c.idleconn.Select(c.Mailbox, true)
 	update := &client.MailboxUpdate{Mailbox: status}
 	return update, err
 }
