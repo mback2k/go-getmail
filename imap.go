@@ -319,6 +319,8 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 			case imap.DeletedFlag:
 				deleted = true
 				break
+			case imap.RecentFlag:
+				continue
 			case imap.SeenFlag:
 				continue
 			default:
