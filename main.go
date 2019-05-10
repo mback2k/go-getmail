@@ -21,8 +21,11 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"runtime"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rollbar/rollbar-go"
 )
 
@@ -45,6 +48,13 @@ func main() {
 		rollbar.SetEnvironment(config.Rollbar.Environment)
 		defer reportError()
 		log.Println("Errors will be reported to rollbar.com!")
+	}
+
+	if config.Metrics != nil && config.Metrics.ListenAddress != "" {
+		cc := NewCollector(config)
+		prometheus.MustRegister(cc)
+		http.Handle("/metrics", promhttp.Handler())
+		go http.ListenAndServe(config.Metrics.ListenAddress, nil)
 	}
 
 	runtime.GC()

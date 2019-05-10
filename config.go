@@ -20,6 +20,10 @@ package main
 
 import "github.com/spf13/viper"
 
+type configMetrics struct {
+	ListenAddress string
+}
+
 type configRollbar struct {
 	AccessToken string
 	Environment string
@@ -28,6 +32,7 @@ type configRollbar struct {
 type config struct {
 	Accounts []*fetchConfig
 
+	Metrics *configMetrics
 	Rollbar *configRollbar
 }
 
