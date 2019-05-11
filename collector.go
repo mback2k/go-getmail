@@ -5,8 +5,9 @@ import (
 )
 
 var (
-	labels        = []string{"name"}
-	account_state = prometheus.NewDesc("go_getmail_account_state", "State of go-getmail accounts.", labels, nil)
+	labels               = []string{"name"}
+	accountState         = prometheus.NewDesc("mail_account_state", "State of mail accounts.", labels, nil)
+	accountMessagesTotal = prometheus.NewDesc("mail_account_messages_total", "Number of processed messages.", labels, nil)
 )
 
 // Collector implements a prometheus.Collector.
@@ -26,9 +27,15 @@ func (cc *Collector) Describe(ch chan<- *prometheus.Desc) {
 func (cc *Collector) Collect(ch chan<- prometheus.Metric) {
 	for _, c := range cc.config.Accounts {
 		ch <- prometheus.MustNewConstMetric(
-			account_state,
+			accountState,
 			prometheus.GaugeValue,
 			float64(c.state),
+			c.Name,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			accountMessagesTotal,
+			prometheus.CounterValue,
+			float64(c.total),
 			c.Name,
 		)
 	}

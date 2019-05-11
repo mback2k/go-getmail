@@ -68,6 +68,7 @@ type fetchConfig struct {
 	Target fetchTarget
 
 	state fetchState
+	total uint64
 	err   error
 }
 
@@ -341,6 +342,7 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 			return
 		}
 
+		c.config.total++
 		deletes <- msg.Uid
 	}
 }
