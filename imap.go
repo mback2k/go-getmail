@@ -244,6 +244,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	if err != nil {
 		c.log().Warn("Source connection failed: ", err)
 		cancel()
+		return
 	}
 	defer c.Source.closeIMAP()
 
@@ -251,6 +252,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	if err != nil {
 		c.log().Warn("Target connection failed: ", err)
 		cancel()
+		return
 	}
 	defer c.Target.closeIMAP()
 
