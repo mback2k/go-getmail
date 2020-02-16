@@ -72,59 +72,59 @@ type fetchConfig struct {
 	err   error
 }
 
-func (c *FetchServer) open() (*client.Client, error) {
-	con, err := client.DialTLS(c.Server, nil)
+func (s *FetchServer) open() (*client.Client, error) {
+	con, err := client.DialTLS(s.Server, nil)
 	if err != nil {
 		return nil, err
 	}
-	err = con.Login(c.Username, c.Password)
+	err = con.Login(s.Username, s.Password)
 	if err != nil {
 		return nil, err
 	}
 	return con, nil
 }
 
-func (c *FetchServer) openIMAP() error {
-	con, err := c.open()
+func (s *FetchServer) openIMAP() error {
+	con, err := s.open()
 	if err != nil {
 		return err
 	}
-	c.imapconn = con
+	s.imapconn = con
 	return nil
 }
 
-func (c *fetchSource) openIDLE() error {
-	con, err := c.open()
+func (s *fetchSource) openIDLE() error {
+	con, err := s.open()
 	if err != nil {
 		return err
 	}
-	c.idleconn = con
+	s.idleconn = con
 	return nil
 }
 
-func (c *FetchServer) selectIMAP() (*client.MailboxUpdate, error) {
-	status, err := c.imapconn.Select(c.Mailbox, false)
+func (s *FetchServer) selectIMAP() (*client.MailboxUpdate, error) {
+	status, err := s.imapconn.Select(s.Mailbox, false)
 	update := &client.MailboxUpdate{Mailbox: status}
 	return update, err
 }
 
-func (c *fetchSource) selectIDLE() (*client.MailboxUpdate, error) {
-	status, err := c.idleconn.Select(c.Mailbox, true)
+func (s *fetchSource) selectIDLE() (*client.MailboxUpdate, error) {
+	status, err := s.idleconn.Select(s.Mailbox, true)
 	update := &client.MailboxUpdate{Mailbox: status}
 	return update, err
 }
 
-func (c *fetchSource) initIDLE() error {
-	update, err := c.selectIDLE()
+func (s *fetchSource) initIDLE() error {
+	update, err := s.selectIDLE()
 	if err != nil {
 		return err
 	}
 	updates := make(chan client.Update, 1)
 	updates <- update
 
-	c.idle = idle.NewClient(c.idleconn)
-	c.idleconn.Updates = updates
-	c.updates = updates
+	s.idle = idle.NewClient(s.idleconn)
+	s.idleconn.Updates = updates
+	s.updates = updates
 	return nil
 }
 
@@ -160,27 +160,27 @@ func (c *fetchConfig) init() error {
 	return err
 }
 
-func (c *FetchServer) closeIMAP() error {
-	if c.imapconn == nil {
+func (s *FetchServer) closeIMAP() error {
+	if s.imapconn == nil {
 		return nil
 	}
-	err := c.imapconn.Logout()
+	err := s.imapconn.Logout()
 	if err != nil {
 		return err
 	}
-	c.imapconn = nil
+	s.imapconn = nil
 	return nil
 }
 
-func (c *fetchSource) closeIDLE() error {
-	if c.idleconn == nil {
+func (s *fetchSource) closeIDLE() error {
+	if s.idleconn == nil {
 		return nil
 	}
-	err := c.idleconn.Logout()
+	err := s.idleconn.Logout()
 	if err != nil {
 		return err
 	}
-	c.idleconn = nil
+	s.idleconn = nil
 	return nil
 }
 
@@ -277,8 +277,8 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	}
 }
 
-func (c *fetchSource) fetchMessages(messages chan *imap.Message, errors chan<- error) {
-	update, err := c.selectIMAP()
+func (s *fetchSource) fetchMessages(messages chan *imap.Message, errors chan<- error) {
+	update, err := s.selectIMAP()
 	if err != nil {
 		errors <- err
 		close(messages)
@@ -293,11 +293,11 @@ func (c *fetchSource) fetchMessages(messages chan *imap.Message, errors chan<- e
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(1, update.Mailbox.Messages)
 
-	errors <- c.imapconn.Fetch(seqset, []imap.FetchItem{
+	errors <- s.imapconn.Fetch(seqset, []imap.FetchItem{
 		"UID", "FLAGS", "INTERNALDATE", "BODY[]"}, messages)
 }
 
-func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<- uint32, errors chan<- error) {
+func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<- uint32, errors chan<- error) {
 	defer close(deletes)
 
 	section, err := imap.ParseBodySectionName("BODY[]")
@@ -306,14 +306,14 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 		return
 	}
 
-	update, err := c.selectIMAP()
+	update, err := t.selectIMAP()
 	if err != nil {
 		errors <- err
 		return
 	}
 
 	for msg := range messages {
-		c.config.log().Info("Handling message: ", msg.Uid)
+		t.config.log().Info("Handling message: ", msg.Uid)
 
 		deleted := false
 		flags := []string{}
@@ -331,30 +331,30 @@ func (c *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 			}
 		}
 		if deleted {
-			c.config.log().Info("Ignoring message: ", msg.Uid)
+			t.config.log().Info("Ignoring message: ", msg.Uid)
 			continue
 		}
 
-		c.config.log().Info("Storing message: ", msg.Uid)
+		t.config.log().Info("Storing message: ", msg.Uid)
 
 		body := msg.GetBody(section)
-		err := c.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
+		err := t.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
 		if err != nil {
 			errors <- err
 			return
 		}
 
-		c.config.total++
+		t.config.total++
 		deletes <- msg.Uid
 	}
 }
 
-func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) {
+func (s *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) {
 	defer close(errors)
 
 	seqset := new(imap.SeqSet)
 	for uid := range deletes {
-		c.config.log().Info("Deleting message: ", uid)
+		s.config.log().Info("Deleting message: ", uid)
 
 		seqset.AddNum(uid)
 	}
@@ -363,7 +363,7 @@ func (c *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) 
 		return
 	}
 
-	err := c.imapconn.UidStore(seqset, imap.AddFlags, []interface{}{imap.DeletedFlag}, nil)
+	err := s.imapconn.UidStore(seqset, imap.AddFlags, []interface{}{imap.DeletedFlag}, nil)
 	if err != nil {
 		errors <- err
 	}
