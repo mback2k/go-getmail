@@ -20,41 +20,44 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"runtime"
 
+	"github.com/heroku/rollrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rollbar/rollbar-go"
+	"github.com/rollbar/rollbar-go/errors"
+
+	log "github.com/sirupsen/logrus"
 )
 
-func reportError() {
-	if r := recover(); r != nil {
-		rollbar.Critical(r)
-		rollbar.Wait()
-		log.Fatal(r)
-	}
-}
-
 func main() {
-	config, err := loadConfig()
+	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if config.Rollbar != nil {
-		rollbar.SetToken(config.Rollbar.AccessToken)
-		rollbar.SetEnvironment(config.Rollbar.Environment)
-		defer reportError()
-		log.Println("Errors will be reported to rollbar.com!")
+	if cfg.Logging != nil && cfg.Logging.Level != "" {
+		l, err := log.ParseLevel(cfg.Logging.Level)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.SetLevel(l)
 	}
 
-	if config.Metrics != nil && config.Metrics.ListenAddress != "" {
-		cc := NewCollector(config)
+	if cfg.Rollbar != nil && cfg.Rollbar.AccessToken != "" {
+		rollbar.SetStackTracer(errors.StackTracer)
+		rollrus.SetupLogging(cfg.Rollbar.AccessToken, cfg.Rollbar.Environment)
+		defer rollrus.ReportPanic(cfg.Rollbar.AccessToken, cfg.Rollbar.Environment)
+		log.Warn("Errors will be reported to rollbar.com!")
+	}
+
+	if cfg.Metrics != nil && cfg.Metrics.ListenAddress != "" {
+		cc := NewCollector(cfg)
 		prometheus.MustRegister(cc)
 		http.Handle("/metrics", promhttp.Handler())
-		go http.ListenAndServe(config.Metrics.ListenAddress, nil)
+		go http.ListenAndServe(cfg.Metrics.ListenAddress, nil)
 	}
 
 	runtime.GC()
@@ -63,15 +66,15 @@ func main() {
 	defer cancel()
 
 	done := make(chan *fetchConfig, 1)
-	for _, c := range config.Accounts {
-		log.Println(c.Name, "[", c.state, "]:", c.Source.Server, "-->", c.Target.Server)
+	for _, c := range cfg.Accounts {
+		c.log().Info(c.Source.Server, " --> ", c.Target.Server)
 		go c.run(ctx, done)
 	}
-	for range config.Accounts {
+	for range cfg.Accounts {
 		c := <-done
 		if c.err != nil {
 			cancel()
-			log.Println(c.Name, "[", c.state, "]:", c.err)
+			c.log().Error(c.err)
 		}
 	}
 }

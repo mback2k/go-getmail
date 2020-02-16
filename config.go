@@ -20,6 +20,10 @@ package main
 
 import "github.com/spf13/viper"
 
+type configLogging struct {
+	Level string
+}
+
 type configMetrics struct {
 	ListenAddress string
 }
@@ -32,6 +36,7 @@ type configRollbar struct {
 type config struct {
 	Accounts []*fetchConfig
 
+	Logging *configLogging
 	Metrics *configMetrics
 	Rollbar *configRollbar
 }
