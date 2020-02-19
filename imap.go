@@ -226,7 +226,7 @@ func (c *fetchConfig) watch(ctx context.Context) error {
 				c.handle(cancel)
 			}
 		case err := <-errors:
-			c.log().Warn("Not idling anymore: ", err)
+			c.log().Warnf("Not idling anymore: %w", err)
 			return err
 		}
 	}
@@ -242,7 +242,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 
 	err := c.Source.openIMAP()
 	if err != nil {
-		c.log().Warn("Source connection failed: ", err)
+		c.log().Warnf("Source connection failed: %w", err)
 		cancel()
 		return
 	}
@@ -250,7 +250,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 
 	err = c.Target.openIMAP()
 	if err != nil {
-		c.log().Warn("Target connection failed: ", err)
+		c.log().Warnf("Target connection failed: %w", err)
 		cancel()
 		return
 	}
@@ -267,7 +267,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	for {
 		err, more := <-errors
 		if err != nil {
-			c.log().Warn("Message handling failed: ", err)
+			c.log().Warnf("Message handling failed: %w", err)
 			cancel()
 		}
 		if !more {
@@ -313,7 +313,7 @@ func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 	}
 
 	for msg := range messages {
-		t.config.log().Info("Handling message: ", msg.Uid)
+		t.config.log().Infof("Handling message: %d", msg.Uid)
 
 		deleted := false
 		flags := []string{}
@@ -331,11 +331,11 @@ func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 			}
 		}
 		if deleted {
-			t.config.log().Info("Ignoring message: ", msg.Uid)
+			t.config.log().Infof("Ignoring message: %d", msg.Uid)
 			continue
 		}
 
-		t.config.log().Info("Storing message: ", msg.Uid)
+		t.config.log().Infof("Storing message: %d", msg.Uid)
 
 		body := msg.GetBody(section)
 		err := t.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
@@ -354,7 +354,7 @@ func (s *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) 
 
 	seqset := new(imap.SeqSet)
 	for uid := range deletes {
-		s.config.log().Info("Deleting message: ", uid)
+		s.config.log().Infof("Deleting message: %d", uid)
 
 		seqset.AddNum(uid)
 	}

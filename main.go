@@ -67,7 +67,7 @@ func main() {
 
 	done := make(chan *fetchConfig, 1)
 	for _, c := range cfg.Accounts {
-		c.log().Info(c.Source.Server, " --> ", c.Target.Server)
+		c.log().Infof("%s --> %s", c.Source.Server, c.Target.Server)
 		go c.run(ctx, done)
 	}
 	for range cfg.Accounts {
