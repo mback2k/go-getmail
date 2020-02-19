@@ -73,8 +73,8 @@ func main() {
 	for range cfg.Accounts {
 		c := <-done
 		if c.err != nil {
-			cancel()
 			c.log().Error(c.err)
 		}
+		cancel()
 	}
 }
