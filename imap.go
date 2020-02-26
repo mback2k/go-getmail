@@ -226,7 +226,7 @@ func (c *fetchConfig) watch() error {
 				c.handle(cancel)
 			}
 		case err := <-errors:
-			c.log().Warnf("Not idling anymore: %w", err)
+			c.log().Warnf("Not idling anymore: %v", err)
 			return err
 		}
 	}
@@ -242,7 +242,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 
 	err := c.Source.openIMAP()
 	if err != nil {
-		c.log().Warnf("Source connection failed: %w", err)
+		c.log().Warnf("Source connection failed: %v", err)
 		cancel()
 		return
 	}
@@ -250,7 +250,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 
 	err = c.Target.openIMAP()
 	if err != nil {
-		c.log().Warnf("Target connection failed: %w", err)
+		c.log().Warnf("Target connection failed: %v", err)
 		cancel()
 		return
 	}
@@ -267,7 +267,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	for {
 		err, more := <-errors
 		if err != nil {
-			c.log().Warnf("Message handling failed: %w", err)
+			c.log().Warnf("Message handling failed: %v", err)
 			cancel()
 		}
 		if !more {
