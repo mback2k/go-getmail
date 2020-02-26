@@ -69,7 +69,7 @@ type fetchConfig struct {
 
 	state fetchState
 	total uint64
-	err   error
+	ctx   context.Context
 }
 
 func (s *FetchServer) open() (*client.Client, error) {
@@ -202,7 +202,7 @@ func (c *fetchConfig) close() error {
 	return nil
 }
 
-func (c *fetchConfig) watch(ctx context.Context) error {
+func (c *fetchConfig) watch() error {
 	defer func(c *fetchConfig, s fetchState) {
 		c.state = s
 	}(c, c.state)
@@ -210,7 +210,7 @@ func (c *fetchConfig) watch(ctx context.Context) error {
 
 	c.log().Info("Begin idling")
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(c.ctx)
 	defer cancel()
 
 	errors := make(chan error, 1)
@@ -369,20 +369,13 @@ func (s *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) 
 	}
 }
 
-func (c *fetchConfig) run(ctx context.Context, done chan<- *fetchConfig) {
-	defer c.done(done)
-	c.err = c.init()
-	if c.err == nil {
-		c.err = c.watch(ctx)
+func (c *fetchConfig) run() error {
+	err := c.init()
+	if err != nil {
+		return err
 	}
-}
-
-func (c *fetchConfig) done(done chan<- *fetchConfig) {
-	err := c.close()
-	if c.err == nil {
-		c.err = err
-	}
-	done <- c
+	defer c.close()
+	return c.watch()
 }
 
 func (c *fetchConfig) log() *log.Entry {

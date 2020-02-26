@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"runtime"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/heroku/rollrus"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -65,16 +67,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	done := make(chan *fetchConfig, 1)
+	g, ctx := errgroup.WithContext(ctx)
 	for _, c := range cfg.Accounts {
+		c.ctx = ctx
 		c.log().Infof("%s --> %s", c.Source.Server, c.Target.Server)
-		go c.run(ctx, done)
+		g.Go(c.run)
 	}
-	for range cfg.Accounts {
-		c := <-done
-		if c.err != nil {
-			c.log().Error(c.err)
-		}
-		cancel()
+
+	err = g.Wait()
+	if err != nil {
+		log.Warn(err)
 	}
 }
