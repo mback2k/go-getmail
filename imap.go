@@ -21,6 +21,8 @@ package main
 import (
 	"context"
 
+	"golang.org/x/sync/errgroup"
+
 	imap "github.com/emersion/go-imap"
 	idle "github.com/emersion/go-imap-idle"
 	client "github.com/emersion/go-imap/client"
@@ -257,60 +259,59 @@ func (c *fetchConfig) handle() error {
 	}
 	defer c.Target.closeIMAP()
 
-	errors := make(chan error, 1)
 	messages := make(chan *imap.Message, 100)
 	deletes := make(chan uint32, 100)
 
-	go c.Source.fetchMessages(messages, errors)
-	go c.Target.storeMessages(messages, deletes, errors)
-	go c.Source.cleanMessages(deletes, errors)
+	var g errgroup.Group
+	g.Go(func() error {
+		return c.Source.fetchMessages(messages)
+	})
+	g.Go(func() error {
+		return c.Target.storeMessages(messages, deletes)
+	})
+	g.Go(func() error {
+		return c.Source.cleanMessages(deletes)
+	})
 
-	for {
-		err, more := <-errors
-		if err != nil {
-			c.log().Warnf("Message handling failed: %v", err)
-			return err
-		}
-		if !more {
-			c.log().Info("Message handling finished")
-			break
-		}
+	err = g.Wait()
+	if err != nil {
+		c.log().Warnf("Message handling failed: %v", err)
+	} else {
+		c.log().Info("Message handling finished")
 	}
+	return err
 }
 
-func (s *fetchSource) fetchMessages(messages chan *imap.Message, errors chan<- error) {
+func (s *fetchSource) fetchMessages(messages chan *imap.Message) error {
 	update, err := s.selectIMAP()
 	if err != nil {
-		errors <- err
 		close(messages)
-		return
+		return err
 	}
 
 	if update.Mailbox.Messages < 1 {
 		close(messages)
-		return
+		return nil
 	}
 
 	seqset := new(imap.SeqSet)
 	seqset.AddRange(1, update.Mailbox.Messages)
 
-	errors <- s.imapconn.Fetch(seqset, []imap.FetchItem{
+	return s.imapconn.Fetch(seqset, []imap.FetchItem{
 		"UID", "FLAGS", "INTERNALDATE", "BODY[]"}, messages)
 }
 
-func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<- uint32, errors chan<- error) {
+func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<- uint32) error {
 	defer close(deletes)
 
 	section, err := imap.ParseBodySectionName("BODY[]")
 	if err != nil {
-		errors <- err
-		return
+		return err
 	}
 
 	update, err := t.selectIMAP()
 	if err != nil {
-		errors <- err
-		return
+		return err
 	}
 
 	for msg := range messages {
@@ -341,18 +342,17 @@ func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 		body := msg.GetBody(section)
 		err := t.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
 		if err != nil {
-			errors <- err
-			return
+			return err
 		}
 
 		t.config.total++
 		deletes <- msg.Uid
 	}
+
+	return nil
 }
 
-func (s *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) {
-	defer close(errors)
-
+func (s *fetchSource) cleanMessages(deletes <-chan uint32) error {
 	seqset := new(imap.SeqSet)
 	for uid := range deletes {
 		s.config.log().Infof("Deleting message: %d", uid)
@@ -361,13 +361,11 @@ func (s *fetchSource) cleanMessages(deletes <-chan uint32, errors chan<- error) 
 	}
 
 	if seqset.Empty() {
-		return
+		return nil
 	}
 
-	err := s.imapconn.UidStore(seqset, imap.AddFlags, []interface{}{imap.DeletedFlag}, nil)
-	if err != nil {
-		errors <- err
-	}
+	return s.imapconn.UidStore(seqset, imap.AddFlags,
+		[]interface{}{imap.DeletedFlag}, nil)
 }
 
 func (c *fetchConfig) run() error {
