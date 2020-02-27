@@ -223,7 +223,10 @@ func (c *fetchConfig) watch() error {
 			c.log().Infof("New update: %#v", update)
 			_, ok := update.(*client.MailboxUpdate)
 			if ok {
-				c.handle(cancel)
+				err := c.handle()
+				if err != nil {
+					return err
+				}
 			}
 		case err := <-errors:
 			c.log().Warnf("Not idling anymore: %v", err)
@@ -232,7 +235,7 @@ func (c *fetchConfig) watch() error {
 	}
 }
 
-func (c *fetchConfig) handle(cancel context.CancelFunc) {
+func (c *fetchConfig) handle() error {
 	defer func(c *fetchConfig, s fetchState) {
 		c.state = s
 	}(c, c.state)
@@ -243,16 +246,14 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 	err := c.Source.openIMAP()
 	if err != nil {
 		c.log().Warnf("Source connection failed: %v", err)
-		cancel()
-		return
+		return err
 	}
 	defer c.Source.closeIMAP()
 
 	err = c.Target.openIMAP()
 	if err != nil {
 		c.log().Warnf("Target connection failed: %v", err)
-		cancel()
-		return
+		return err
 	}
 	defer c.Target.closeIMAP()
 
@@ -268,7 +269,7 @@ func (c *fetchConfig) handle(cancel context.CancelFunc) {
 		err, more := <-errors
 		if err != nil {
 			c.log().Warnf("Message handling failed: %v", err)
-			cancel()
+			return err
 		}
 		if !more {
 			c.log().Info("Message handling finished")
