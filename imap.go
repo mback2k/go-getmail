@@ -276,10 +276,17 @@ func (c *fetchConfig) handle() error {
 	err = g.Wait()
 	if err != nil {
 		c.log().Warnf("Message handling failed: %v", err)
-	} else {
-		c.log().Info("Message handling finished")
+		return err
 	}
-	return err
+
+	err = c.Source.imapconn.Expunge(nil)
+	if err != nil {
+		c.log().Warnf("Message expunge failed: %v", err)
+		return err
+	}
+
+	c.log().Info("Message handling finished")
+	return nil
 }
 
 func (s *fetchSource) fetchMessages(messages chan *imap.Message) error {
