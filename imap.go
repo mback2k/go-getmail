@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -345,8 +346,9 @@ func (t *fetchTarget) storeMessages(messages <-chan *imap.Message, deletes chan<
 
 		t.config.log().Infof("Storing message: %d", msg.Uid)
 
+		now := time.Now()
 		body := msg.GetBody(section)
-		err := t.imapconn.Append(update.Mailbox.Name, flags, msg.InternalDate, body)
+		err := t.imapconn.Append(update.Mailbox.Name, flags, now, body)
 		if err != nil {
 			return err
 		}
