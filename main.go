@@ -76,6 +76,6 @@ func main() {
 
 	err = g.Wait()
 	if err != nil {
-		log.Warn(err)
+		log.Error(err)
 	}
 }

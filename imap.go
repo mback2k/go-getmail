@@ -379,10 +379,16 @@ func (s *fetchSource) cleanMessages(deletes <-chan uint32) error {
 func (c *fetchConfig) run() error {
 	err := c.init()
 	if err != nil {
+		c.log().Error(err)
 		return err
 	}
 	defer c.close()
-	return c.watch()
+	err = c.watch()
+	if err != nil {
+		c.log().Error(err)
+		return err
+	}
+	return nil
 }
 
 func (c *fetchConfig) log() *log.Entry {
