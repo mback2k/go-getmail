@@ -20,15 +20,20 @@ package main
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 
 	imap "github.com/emersion/go-imap"
 	idle "github.com/emersion/go-imap-idle"
 	client "github.com/emersion/go-imap/client"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/mback2k/go-getmail/modernauth"
 )
 
 // FetchServer contains the IMAP credentials.
@@ -36,10 +41,12 @@ type FetchServer struct {
 	Server   string
 	Username string
 	Password string
+	Provider string
 	Mailbox  string
 
 	config   *fetchConfig
 	imapconn *client.Client
+	tokensrc oauth2.TokenSource
 }
 
 type fetchSource struct {
@@ -73,14 +80,31 @@ type fetchConfig struct {
 	state fetchState
 	total uint64
 	ctx   context.Context
+
+	mqttopts *mqtt.ClientOptions
+	mqttlock *sync.Mutex
 }
 
 func (s *FetchServer) open() (*client.Client, error) {
+	if s.Provider != "" {
+		if s.tokensrc == nil {
+			s.tokensrc = modernauth.NewTokenSource(s.config.ctx, s.Provider, s.Username, s.config.mqttopts, s.config.mqttlock)
+		}
+		tok, err := s.tokensrc.Token()
+		if err != nil {
+			return nil, err
+		}
+		s.Password = tok.AccessToken
+	}
 	con, err := client.DialTLS(s.Server, nil)
 	if err != nil {
 		return nil, err
 	}
-	err = con.Login(s.Username, s.Password)
+	if s.Provider != "" {
+		err = con.Authenticate(modernauth.NewXoauth2Client(s.Username, s.Password))
+	} else {
+		err = con.Login(s.Username, s.Password)
+	}
 	if err != nil {
 		return nil, err
 	}

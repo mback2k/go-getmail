@@ -22,6 +22,7 @@ import (
 	"context"
 	"net/http"
 	"runtime"
+	"sync"
 
 	"golang.org/x/sync/errgroup"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/rollbar/rollbar-go"
 	"github.com/rollbar/rollbar-go/errors"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -62,6 +64,18 @@ func main() {
 		go http.ListenAndServe(cfg.Metrics.ListenAddress, nil)
 	}
 
+	mqttlock := &sync.Mutex{}
+	mqttopts := mqtt.NewClientOptions()
+	if cfg.Broker != nil {
+		if cfg.Broker.ClientID == "" {
+			cfg.Broker.ClientID = "go-getmail"
+		}
+		mqttopts.AddBroker(cfg.Broker.URL)
+		mqttopts.SetClientID(cfg.Broker.ClientID)
+		mqttopts.SetUsername(cfg.Broker.Username)
+		mqttopts.SetPassword(cfg.Broker.Password)
+	}
+
 	runtime.GC()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -70,6 +84,8 @@ func main() {
 	g, ctx := errgroup.WithContext(ctx)
 	for _, c := range cfg.Accounts {
 		c.ctx = ctx
+		c.mqttopts = mqttopts
+		c.mqttlock = mqttlock
 		c.log().Infof("%s --> %s", c.Source.Server, c.Target.Server)
 		g.Go(c.run)
 	}

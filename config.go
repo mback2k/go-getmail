@@ -37,12 +37,21 @@ type configRollbar struct {
 	Environment string
 }
 
+type configBroker struct {
+	URL      string
+	ClientID string
+	Username string
+	Password string
+}
+
 type config struct {
 	Accounts []*fetchConfig
 
 	Logging *configLogging
 	Metrics *configMetrics
 	Rollbar *configRollbar
+
+	Broker *configBroker
 }
 
 func loadConfig() (*config, error) {
