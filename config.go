@@ -19,6 +19,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/spf13/viper"
 )
 
@@ -49,6 +51,10 @@ func loadConfig() (*config, error) {
 	vpr.AddConfigPath("/etc/go-getmail/")
 	vpr.AddConfigPath("$HOME/.go-getmail")
 	vpr.AddConfigPath(".")
+	if len(os.Args) > 1 {
+		vpr.SetConfigFile(os.Args[1])
+	}
+
 	err := vpr.ReadInConfig()
 	if err != nil {
 		return nil, err
