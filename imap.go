@@ -33,8 +33,8 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/mback2k/go-getmail/modernauth"
-	"github.com/mback2k/go-getmail/modernauth/hassmqtt"
+	"github.com/mback2k/go-modernauth"
+	"github.com/mback2k/go-modernauth/hassmqtt"
 )
 
 // FetchServer contains the IMAP credentials.
