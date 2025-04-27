@@ -34,6 +34,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/mback2k/go-getmail/modernauth"
+	"github.com/mback2k/go-getmail/modernauth/hassmqtt"
 )
 
 // FetchServer contains the IMAP credentials.
@@ -88,7 +89,8 @@ type fetchConfig struct {
 func (s *FetchServer) open() (*client.Client, error) {
 	if s.Provider != "" {
 		if s.tokensrc == nil {
-			s.tokensrc = modernauth.NewTokenSource(s.config.ctx, s.Provider, s.Username, s.config.mqttopts, s.config.mqttlock)
+			backend := hassmqtt.NewHassMqttAuthBackend(s.config.ctx, s.Username, s.config.mqttopts, s.config.mqttlock)
+			s.tokensrc = modernauth.NewDeviceAuthTokenSource(s.config.ctx, s.Provider, backend)
 		}
 		tok, err := s.tokensrc.Token()
 		if err != nil {

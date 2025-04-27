@@ -16,11 +16,13 @@
 	along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-package modernauth
+package hassmqtt
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -28,14 +30,26 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-func (ts *TokenSource) mqttLoadToken() (*oauth2.Token, error) {
-	unique_id := strings.ReplaceAll(strings.ReplaceAll(ts.name, "@", "-"), ".", "-")
-	base := "modernauth/" + ts.mqttopts.ClientID + "/" + unique_id
+type HassMqttAuthBackend struct {
+	ctx  context.Context
+	name string
 
-	ts.mqttlock.Lock()
-	defer ts.mqttlock.Unlock()
+	mqttopts *mqtt.ClientOptions
+	mqttlock *sync.Mutex
+}
 
-	client := mqtt.NewClient(ts.mqttopts)
+func (ab *HassMqttAuthBackend) uniqueID() string {
+	return strings.ReplaceAll(strings.ReplaceAll(ab.name, "@", "-"), ".", "-")
+}
+
+func (ab *HassMqttAuthBackend) LoadToken() (*oauth2.Token, error) {
+	unique_id := ab.uniqueID()
+	base := "modernauth/" + ab.mqttopts.ClientID + "/" + unique_id
+
+	ab.mqttlock.Lock()
+	defer ab.mqttlock.Unlock()
+
+	client := mqtt.NewClient(ab.mqttopts)
 	token := client.Connect()
 	if token.Wait() && token.Error() != nil {
 		return nil, token.Error()
@@ -62,21 +76,21 @@ func (ts *TokenSource) mqttLoadToken() (*oauth2.Token, error) {
 		return nil, err
 	case tok := <-tokens:
 		return tok, nil
-	case <-ts.ctx.Done():
+	case <-ab.ctx.Done():
 	case <-time.After(time.Second):
 	}
 
 	return nil, nil
 }
 
-func (ts *TokenSource) mqttSaveToken(tok *oauth2.Token) error {
-	unique_id := strings.ReplaceAll(strings.ReplaceAll(ts.name, "@", "-"), ".", "-")
-	base := "modernauth/" + ts.mqttopts.ClientID + "/" + unique_id
+func (ab *HassMqttAuthBackend) SaveToken(tok *oauth2.Token) error {
+	unique_id := ab.uniqueID()
+	base := "modernauth/" + ab.mqttopts.ClientID + "/" + unique_id
 
-	ts.mqttlock.Lock()
-	defer ts.mqttlock.Unlock()
+	ab.mqttlock.Lock()
+	defer ab.mqttlock.Unlock()
 
-	client := mqtt.NewClient(ts.mqttopts)
+	client := mqtt.NewClient(ab.mqttopts)
 	token := client.Connect()
 	if token.Wait() && token.Error() != nil {
 		return token.Error()
@@ -96,14 +110,14 @@ func (ts *TokenSource) mqttSaveToken(tok *oauth2.Token) error {
 	return nil
 }
 
-func (ts *TokenSource) mqttHassNotify(code *oauth2.DeviceAuthResponse) error {
-	unique_id := strings.ReplaceAll(strings.ReplaceAll(ts.name, "@", "-"), ".", "-")
-	base := "homeassistant/event/" + ts.mqttopts.ClientID + "/" + unique_id
+func (ab *HassMqttAuthBackend) Notify(code *oauth2.DeviceAuthResponse) error {
+	unique_id := ab.uniqueID()
+	base := "homeassistant/event/" + ab.mqttopts.ClientID + "/" + unique_id
 
-	ts.mqttlock.Lock()
-	defer ts.mqttlock.Unlock()
+	ab.mqttlock.Lock()
+	defer ab.mqttlock.Unlock()
 
-	client := mqtt.NewClient(ts.mqttopts)
+	client := mqtt.NewClient(ab.mqttopts)
 	token := client.Connect()
 	if token.Wait() && token.Error() != nil {
 		return token.Error()
@@ -112,13 +126,13 @@ func (ts *TokenSource) mqttHassNotify(code *oauth2.DeviceAuthResponse) error {
 
 	config := map[string]interface{}{
 		"~":           base,
-		"name":        ts.name,
+		"name":        ab.name,
 		"event_types": []string{"auth"},
 		"state_topic": "~/state",
-		"unique_id":   ts.mqttopts.ClientID + "-" + unique_id,
+		"unique_id":   ab.mqttopts.ClientID + "-" + unique_id,
 		"device": map[string]interface{}{
-			"identifiers": []string{ts.mqttopts.ClientID},
-			"name":        ts.name,
+			"identifiers": []string{ab.mqttopts.ClientID},
+			"name":        ab.name,
 		},
 	}
 	bytes, err := json.Marshal(config)
@@ -147,4 +161,16 @@ func (ts *TokenSource) mqttHassNotify(code *oauth2.DeviceAuthResponse) error {
 	}
 
 	return nil
+}
+
+func NewHassMqttAuthBackend(ctx context.Context, name string,
+	mqttopts *mqtt.ClientOptions, mqttlock *sync.Mutex) *HassMqttAuthBackend {
+
+	return &HassMqttAuthBackend{
+		ctx:  ctx,
+		name: name,
+
+		mqttopts: mqttopts,
+		mqttlock: mqttlock,
+	}
 }

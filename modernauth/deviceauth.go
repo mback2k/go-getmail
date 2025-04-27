@@ -20,11 +20,8 @@ package modernauth
 
 import (
 	"context"
-	"sync"
 
 	"golang.org/x/oauth2"
-
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 var providers = map[string]oauth2.Config{
@@ -40,18 +37,27 @@ var providers = map[string]oauth2.Config{
 	},
 }
 
-type TokenSource struct {
-	ctx  context.Context
-	conf *oauth2.Config
-	name string
+type DeviceAuthBackend interface {
+	// LoadToken loads an existing token from the backend
+	LoadToken() (*oauth2.Token, error)
 
-	mqttopts *mqtt.ClientOptions
-	mqttlock *sync.Mutex
+	// SaveToken saves the token to the backend
+	SaveToken(token *oauth2.Token) error
+
+	// Notify sends a notification to the user
+	Notify(code *oauth2.DeviceAuthResponse) error
 }
 
-func (ts *TokenSource) Token() (*oauth2.Token, error) {
+type DeviceAuthTokenSource struct {
+	ctx  context.Context
+	conf *oauth2.Config
+
+	backend DeviceAuthBackend
+}
+
+func (ts *DeviceAuthTokenSource) Token() (*oauth2.Token, error) {
 	// Check if we have a token already
-	token, err := ts.mqttLoadToken()
+	token, err := ts.backend.LoadToken()
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +71,7 @@ func (ts *TokenSource) Token() (*oauth2.Token, error) {
 		}
 
 		// Forward the code to the user
-		err = ts.mqttHassNotify(code)
+		err = ts.backend.Notify(code)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +90,7 @@ func (ts *TokenSource) Token() (*oauth2.Token, error) {
 	}
 
 	// Save the token
-	err = ts.mqttSaveToken(token)
+	err = ts.backend.SaveToken(token)
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +98,9 @@ func (ts *TokenSource) Token() (*oauth2.Token, error) {
 	return token, nil
 }
 
-func NewTokenSource(ctx context.Context, provider string, name string,
-	mqttopts *mqtt.ClientOptions, mqttlock *sync.Mutex) oauth2.TokenSource {
+func NewDeviceAuthTokenSource(ctx context.Context, provider string,
+	backend DeviceAuthBackend) oauth2.TokenSource {
 
 	conf := providers[provider]
-	return &TokenSource{ctx, &conf, name, mqttopts, mqttlock}
+	return &DeviceAuthTokenSource{ctx, &conf, backend}
 }
