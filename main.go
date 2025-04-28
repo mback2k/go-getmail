@@ -92,6 +92,6 @@ func main() {
 
 	err = g.Wait()
 	if err != nil {
-		log.Error(err)
+		log.Fatal(err)
 	}
 }
